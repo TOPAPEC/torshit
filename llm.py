@@ -1,6 +1,6 @@
 import openai
 import json
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any
 
 from config import Config
 
@@ -8,6 +8,20 @@ class LLMService:
     def __init__(self):
         openai.api_key = Config.OPENAI_KEY
         openai.api_base = Config.ENDPOINT
+
+    def create_rag_documents(self, cities_content: Dict[str, Any], selected_cities: List[str]) -> List[dict]:
+        documents = []
+        doc_id = 0
+        for city in selected_cities:
+            if city in cities_content:
+                for chunk in cities_content[city].chunks:
+                    documents.append({
+                        "doc_id": doc_id,
+                        "title": city,
+                        "content": chunk
+                    })
+                    doc_id += 1
+        return documents
 
     def get_preferences(self, user_input: str) -> str:
         return openai.ChatCompletion.create(
@@ -26,7 +40,7 @@ class LLMService:
             {'role': 'documents', 'content': json.dumps(documents, ensure_ascii=False)},
             {'role': 'user', 'content': user_preferences}
         ]
-        
+
         relevant_docs = openai.ChatCompletion.create(
             model=Config.LLM_MODEL,
             messages=history,

@@ -1,5 +1,7 @@
 import asyncio
 
+from advisor import TravelAdvisor
+
 async def main():
     # Example user request
     user_input = """Хочу поехать на море в августе, чтобы было тепло около 25-30 градусов 

@@ -19,11 +19,11 @@ class EmbeddingService:
             model_output = self.model(**encoded_input)
         return self.mean_pooling(model_output, encoded_input['attention_mask'])[0].numpy()
 
-    def find_similar_cities(self, user_preferences: str, embeddings: Dict, descriptions: Dict, top_n=3):
+    def get_top_cities(self, user_preferences: str, embeddings: Dict, descriptions: Dict, top_n=2) -> List[Tuple[str, float]]:
         user_embedding = self.get_embedding(user_preferences)
         similarities = {
             city: cosine_similarity(user_embedding.reshape(1, -1), emb.reshape(1, -1))[0][0]
             for city, emb in embeddings.items()
         }
-        sorted_cities = sorted(similarities.items(), key=lambda x: x[1], reverse=True)
-        return [(city, descriptions[city]) for city, _ in sorted_cities[:top_n]]
+        return sorted(similarities.items(), key=lambda x: x[1], reverse=True)[:top_n]
+

@@ -20,15 +20,16 @@ class TravelAdvisor:
             }
 
             preferences = self.llm_service.get_preferences(user_input)
-            similar_cities = self.embedding_service.find_similar_cities(
+            top_cities = self.embedding_service.get_top_cities(
                 preferences, embeddings, {k: v.summary for k, v in cities_content.items()}
             )
 
-            documents = [{"doc_id": idx, "title": city, "content": content.full_text}
-                        for idx, (city, content) in enumerate(cities_content.items())]
+            selected_cities = [city for city, _ in top_cities]
+            documents = self.llm_service.create_rag_documents(cities_content, selected_cities)
             relevant_docs, final_answer = self.llm_service.get_rag_response(preferences, documents)
 
-            return preferences, similar_cities, relevant_docs, final_answer
+            return preferences, top_cities, relevant_docs, final_answer
         except Exception as e:
             print(f"Error occurred: {e}")
             return None, None, None, None
+
