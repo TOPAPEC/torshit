@@ -38,7 +38,7 @@ def mean_pooling(model_output, attention_mask):
     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
 def get_city_descriptions():
-    wiki = wikipediaapi.Wikipedia('torshitapp/1.0 (danbugrienko@gmail.com)')
+    wiki = wikipediaapi.Wikipedia('torshitapp/1.0 (danbugrienko@gmail.com)', language='ru')
 
     resort_cities = [
         'Сочи', 'Анапа', 'Геленджик', 'Ялта', 'Алушта', 'Евпатория',
@@ -49,7 +49,7 @@ def get_city_descriptions():
     for city in resort_cities:
         page = wiki.page(city)
         if page.exists():
-            descriptions[city] = page.summary
+            descriptions[city] = page.text
     return descriptions
 
 def create_embeddings():
