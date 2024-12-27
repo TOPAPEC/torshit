@@ -1,30 +1,33 @@
-import openai
-import json
-from typing import List, Tuple, Dict, Any
+from openai import AsyncOpenAI
+import asyncio
+from typing import List, Dict, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor
 
 from config import Config
 
 class LLMService:
     def __init__(self):
-        openai.api_key = Config.OPENAI_KEY
-        openai.api_base = Config.ENDPOINT
+        self.client = AsyncOpenAI(
+            api_key=Config.OPENAI_KEY,
+            base_url=Config.ENDPOINT
+        )
 
-    def create_rag_documents(self, cities_content: Dict[str, Any], selected_cities: List[str]) -> List[dict]:
-        documents = []
-        doc_id = 0
-        for city in selected_cities:
-            if city in cities_content:
-                for chunk in cities_content[city].chunks:
-                    documents.append({
-                        "doc_id": doc_id,
-                        "title": city,
-                        "content": chunk
-                    })
-                    doc_id += 1
-        return documents
+    async def extract_chunk_preferences(self, chunk: str) -> str:
+        messages = [
+            {"role": "system", "content": "Extract key tourist information from the text: attractions, weather, prices, accommodations, transport. Be brief."},
+            {"role": "user", "content": chunk}
+        ]
 
-    def get_preferences(self, user_input: str) -> str:
-        return openai.ChatCompletion.create(
+        response = await self.client.chat.completions.create(
+            model=Config.LLM_MODEL,
+            messages=messages,
+            temperature=0.0,
+            max_tokens=512
+        )
+        return response.choices[0].message.content
+
+    async def get_preferences(self, user_input: str) -> str:
+        response = await self.client.chat.completions.create(
             model=Config.LLM_MODEL,
             messages=[
                 {"role": "system", "content": Config.SYSTEM_PROMPT},
@@ -32,27 +35,35 @@ class LLMService:
             ],
             temperature=0.0,
             max_tokens=2048
-        ).choices[0].message.content
+        )
+        return response.choices[0].message.content
 
-    def get_rag_response(self, user_preferences: str, documents: List[dict]) -> Tuple[str, str]:
-        history = [
+    async def process_chunks(self, chunks: List[str]) -> List[str]:
+        tasks = [self.extract_chunk_preferences(chunk) for chunk in chunks]
+        return await asyncio.gather(*tasks)
+
+    async def get_rag_response(self, user_preferences: str, documents: List[dict]) -> Tuple[str, str]:
+        messages = [
             {'role': 'system', 'content': Config.GROUNDED_SYSTEM_PROMPT},
-            {'role': 'documents', 'content': json.dumps(documents, ensure_ascii=False)},
             {'role': 'user', 'content': user_preferences}
         ]
 
-        relevant_docs = openai.ChatCompletion.create(
+        # Send documents as separate message
+        doc_message = {'role': 'user', 'content': f"Available information:\n{json.dumps(documents, ensure_ascii=False)}"}
+
+        response = await self.client.chat.completions.create(
             model=Config.LLM_MODEL,
-            messages=history,
+            messages=messages + [doc_message],
             temperature=0.0,
             max_tokens=2048
-        ).choices[0].message.content
+        )
+        relevant_docs = response.choices[0].message.content
 
-        final_answer = openai.ChatCompletion.create(
+        final_response = await self.client.chat.completions.create(
             model=Config.LLM_MODEL,
-            messages=history + [{'role': 'assistant', 'content': relevant_docs}],
+            messages=messages + [doc_message, {'role': 'assistant', 'content': relevant_docs}],
             temperature=0.3,
             max_tokens=2048
-        ).choices[0].message.content
+        )
+        return relevant_docs, final_response.choices[0].message.content
 
-        return relevant_docs, final_answer
