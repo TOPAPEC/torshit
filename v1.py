@@ -127,7 +127,9 @@ async def process_user_request(user_input: str):
     bert_model = AutoModel.from_pretrained("sberbank-ai/ruBert-base")
     
     cities_content = await get_all_cities_content()
-    
+    if not cities_content:
+        return None, None, None, None
+        
     embeddings = {}
     for city, content in cities_content.items():
         encoded_input = tokenizer(content.summary, padding=True, truncation=True, 
@@ -137,20 +139,45 @@ async def process_user_request(user_input: str):
             model_output = bert_model(**encoded_input)
         sentence_embeddings = mean_pooling(model_output, encoded_input['attention_mask'])
         embeddings[city] = sentence_embeddings[0].numpy()
-
+    
+    try:
+        preferences = openai.ChatCompletion.create(
+            model=llm_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input}
+            ],
+            temperature=0.0,
+            max_tokens=2048
+        ).choices[0].message.content
+        
+        similar_cities = find_similar_cities(preferences, embeddings, 
+                                           {k: v.summary for k, v in cities_content.items()})
+        
+        rag_documents = create_rag_documents(cities_content)
+        relevant_docs, final_answer = get_rag_response(preferences, rag_documents)
+        
+        return preferences, similar_cities, relevant_docs, final_answer
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        return None, None, None, None
 
 if __name__ == "__main__":
     user_input = "Хочу поехать на море в августе, чтобы было тепло около 25-30 градусов и песчаный пляж. Бюджет до 100000 рублей."
-    preferences, recommendations, relevant_docs, final_answer = asyncio.run(process_user_request(user_input))
+    result = asyncio.run(process_user_request(user_input))
+    if result[0] is not None:
+        preferences, recommendations, relevant_docs, final_answer = result
+        print("Выделенные предпочтения:")
+        print(preferences)
+        print("\nРекомендованные города:")
+        for city, description in recommendations:
+            print(f"\n{city}:")
+            print(description)
+        print("\nРелевантные документы:")
+        print(relevant_docs)
+        print("\nИтоговый ответ:")
+        print(final_answer)
+    else:
+        print("Failed to process request")
 
-    print("Выделенные предпочтения:")
-    print(preferences)
-    print("\nРекомендованные города:")
-    for city, description in recommendations:
-        print(f"\n{city}:")
-        print(description)
-    print("\nРелевантные документы:")
-    print(relevant_docs)
-    print("\nИтоговый ответ:")
-    print(final_answer)
 
