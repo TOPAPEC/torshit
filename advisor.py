@@ -20,12 +20,15 @@ class TravelAdvisor:
             }
 
             preferences = self.llm_service.get_preferences(user_input)
+            print("Getting top cities")
             top_cities = self.embedding_service.get_top_cities(
                 preferences, embeddings, {k: v.summary for k, v in cities_content.items()}
             )
 
             selected_cities = [city for city, _ in top_cities]
+            print("Creating RAG docs for most relevant cities")
             documents = self.llm_service.create_rag_documents(cities_content, selected_cities)
+            print("Performing RAG")
             relevant_docs, final_answer = self.llm_service.get_rag_response(preferences, documents)
 
             return preferences, top_cities, relevant_docs, final_answer
