@@ -1,5 +1,5 @@
 import torch
-from typing import Dict
+from typing import Dict, List, Tuple
 from transformers import AutoTokenizer, AutoModel
 from sklearn.metrics.pairwise import cosine_similarity
 
