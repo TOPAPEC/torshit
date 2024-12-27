@@ -30,12 +30,15 @@ async def main():
         print(final_answer)
     else:
         print("Не удалось обработать запрос")
+        raise
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nПрограмма завершена пользователем")
+        raise
     except Exception as e:
         print(f"\nПроизошла ошибка: {e}")
+        raise
 
