@@ -50,7 +50,7 @@ class TravelAdvisor:
                 {
                     "doc_id": idx,
                     "title": chunk["city"],
-                    "content": f"{chunk['content']}\nKey Information: {chunk['extracted_info']}"
+                    "content": f"{chunk['extracted_info']}"
                 }
                 for idx, chunk in enumerate(all_chunks)
             ]
