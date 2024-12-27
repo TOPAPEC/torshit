@@ -39,6 +39,8 @@ def mean_pooling(model_output, attention_mask):
 
 def get_city_descriptions():
     wiki = wikipediaapi.Wikipedia('ru')
+
+    wiki.set_user_agent('torshitapp/1.0 (danbugrienko@gmail.com)')
     resort_cities = [
         'Сочи', 'Анапа', 'Геленджик', 'Ялта', 'Алушта', 'Евпатория',
         'Кисловодск', 'Пятигорск', 'Домбай', 'Шерегеш', 'Байкальск',
