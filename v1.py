@@ -9,7 +9,7 @@ from transformers import AutoTokenizer, AutoModel
 import torch
 
 openai.api_key = 'xxx'
-endpoint = 'https://2hor03cdkqoqnx-8000.proxy.runpod.net/v1'
+endpoint = 'http://localhost:8000/v1'
 model = 'Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24'
 openai.api_base = endpoint
 
