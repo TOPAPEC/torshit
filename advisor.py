@@ -20,11 +20,16 @@ class TravelAdvisor:
             if not cities_content:
                 return None, None, None, None
 
+            for city, content in cities_content.items():
+                print(f"{city}: {content}")
+                print("-" * 20)
+
             # Get embeddings and top cities (limit to 2-3 cities to manage context)
             embeddings = {
                 city: self.embedding_service.get_embedding(content.summary)
                 for city, content in cities_content.items()
             }
+
 
             # Get top cities with scores
             top_cities = self.embedding_service.get_top_cities(
