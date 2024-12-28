@@ -1,4 +1,5 @@
 from openai import AsyncOpenAI
+from transformers import AutoTokenizer
 from typing import List, Dict, Tuple, Optional
 import tiktoken
 import json
@@ -7,10 +8,11 @@ import asyncio
 from config import Config
 
 
+
 class ContextManager:
     def __init__(self, model_context_length: int = 10000):
         self.model_context_length = model_context_length
-        self.tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")  # or your specific model
+        self.tokenizer = AutoTokenizer.from_pretrained("Vikhrmodels/Vikhr-Nemo-12B-Instruct-R-21-09-24")
         self.system_prompt_tokens = len(self.tokenizer.encode(Config.SYSTEM_PROMPT))
         self.rag_prompt_tokens = len(self.tokenizer.encode(Config.GROUNDED_SYSTEM_PROMPT))
         self.expected_output_tokens = 2048
@@ -36,10 +38,16 @@ class LLMService:
     async def compress_chunk(self, chunk: str, max_tokens: int) -> str:
         while self.context_manager.count_tokens(chunk) > max_tokens:
             messages = [
-                {"role": "system", "content": "Summarize the key tourist information in 1-2 sentences."},
-                {"role": "user", "content": chunk}
-            ]
-
+            {"role": "system", "content": """Кратко обобщите ключевую туристическую информацию, включая:
+- климат и погодные условия
+- экологическую обстановку
+- температуру воды (если есть водоемы)
+- основные достопримечательности
+- исторические объекты
+- транспортную доступность
+Сохраняйте только самую важную информацию для туристов."""},
+            {"role": "user", "content": chunk}
+        ]
             response = await self.client.chat.completions.create(
                 model=Config.LLM_MODEL,
                 messages=messages,
@@ -50,16 +58,21 @@ class LLMService:
         return chunk
 
     async def merge_summaries(self, summaries: List[str], city: str, max_tokens: int) -> str:
-        combined = f"Information about {city}:\n" + "\n".join(summaries)
+        combined = f"Информация о {city}:\n" + "\n".join(summaries)
 
         if self.context_manager.count_tokens(combined) <= max_tokens:
             return combined
 
         messages = [
-            {"role": "system", "content": "Merge the information into a coherent summary about the location. Focus on tourist-relevant details."},
+            {"role": "system", "content": """Объедините информацию в связное описание места, фокусируясь на:
+    - главных достопримечательностях
+    - климате и сезонности посещения
+    - транспортной инфраструктуре
+    - уникальных особенностях места
+    - практических советах для туристов
+    Информация должна быть полезной для планирования поездки."""},
             {"role": "user", "content": combined}
         ]
-
         response = await self.client.chat.completions.create(
             model=Config.LLM_MODEL,
             messages=messages,
