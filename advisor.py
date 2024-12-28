@@ -4,6 +4,7 @@ from llm import LLMService
 
 class TravelAdvisor:
     def __init__(self, model_context_length: int = 10000):
+        print("Initializing TravelAdvisor")
         self.wiki_service = WikiService()
         self.embedding_service = EmbeddingService()
         self.llm_service = LLMService(model_context_length)
@@ -11,77 +12,66 @@ class TravelAdvisor:
 
     async def process_request(self, user_input: str):
         try:
-            # Get initial preferences to include their tokens in calculations
-            preferences = await self.llm_service.get_preferences(user_input)
-            available_tokens = self.context_manager.get_available_tokens(preferences, is_rag=True)
+            print("Starting request processing")
+            print(f"User input: {user_input}")
 
-            # Get cities content
+            print("Getting initial preferences")
+            preferences = await self.llm_service.get_preferences(user_input)
+            print(f"Extracted preferences: {preferences}")
+
+            print("Calculating available tokens")
+            available_tokens = self.context_manager.get_available_tokens(preferences, is_rag=True)
+            print(f"Available tokens: {available_tokens}")
+
+            print("Fetching cities content")
             cities_content = await self.wiki_service.get_all_cities_content()
             if not cities_content:
+                print("No cities content found")
                 return None, None, None, None
 
+            print("Cities content retrieved:")
             for city, content in cities_content.items():
-                print(f"{city}: {content}")
+                print(f"{city}: {content.summary}")
                 print("-" * 20)
 
-            # Get embeddings and top cities (limit to 2-3 cities to manage context)
-            embeddings = {
-                city: self.embedding_service.get_embedding(content.summary)
+            print("Preparing for embeddings")
+            summaries = [content.summary for content in cities_content.values()]
+            summaries.append(preferences)
+            print(f"Total summaries to embed: {len(summaries)}")
+
+            print("Getting batch embeddings")
+            all_embeddings = self.embedding_service.get_embeddings_batch(summaries)
+            print("Embeddings retrieved successfully")
+
+            print("Separating embeddings")
+            preferences_embedding = all_embeddings[preferences]
+            cities_embeddings = {
+                city: all_embeddings[content.summary]
                 for city, content in cities_content.items()
             }
+            print(f"Number of city embeddings: {len(cities_embeddings)}")
 
-
-            # Get top cities with scores
+            print("Finding top cities")
             top_cities = self.embedding_service.get_top_cities(
                 preferences, 
-                embeddings, 
+                cities_embeddings,
                 {k: v.summary for k, v in cities_content.items()},
-                top_n=2  # Limiting to top 2 cities for better context management
+                top_n=2
             )
+            print(f"Top cities found: {[city for city, _ in top_cities]}")
 
-            # Prepare chunks for selected cities
             selected_cities = [city for city, _ in top_cities]
             cities_chunks = {
                 city: cities_content[city].chunks 
                 for city in selected_cities 
                 if city in cities_content
             }
+            print(f"Chunks retrieved for cities: {list(cities_chunks.keys())}")
 
-            # Calculate approximate tokens per city
-            total_cities = len(cities_chunks)
-            if total_cities == 0:
-                return None, None, None, None
-
-            # Prepare RAG documents with context management
-            documents = await self.llm_service.prepare_rag_documents(
-                cities_chunks,
-                preferences
-            )
-
-            # Final RAG processing
-            relevant_docs, final_answer = await self.llm_service.get_rag_response(
-                preferences,
-                documents
-            )
-
-            # Prepare result summary
-            result_summary = {
-                "preferences": preferences,
-                "top_cities": [
-                    {
-                        "city": city,
-                        "similarity_score": score,
-                        "summary": next((doc["content"] for doc in documents if doc["title"] == city), None)
-                    }
-                    for city, score in top_cities
-                ],
-                "relevant_docs": relevant_docs,
-                "final_answer": final_answer
-            }
-
-            return result_summary
+            return cities_chunks, top_cities, preferences, available_tokens
 
         except Exception as e:
-            print(f"Error occurred: {e}")
+            print(f"Error occurred in process_request: {str(e)}")
+            print(f"Error type: {type(e)}")
             return None
 
