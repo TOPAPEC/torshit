@@ -7,22 +7,23 @@ async def main():
     user_input = """Хочу поехать на море в августе, чтобы было тепло около 25-30 градусов 
                     и песчаный пляж. Бюджет до 100000 рублей."""
 
-    result = await advisor.process_request(user_input)
+    cities_chunks, top_cities, preferences, available_tokens = await advisor.process_request(user_input)
 
-    if result:
+    if cities_chunks:
         print("\n=== АНАЛИЗ ЗАПРОСА ===")
-        print(result["preferences"])
+        print(preferences)
 
         print("\n=== РЕКОМЕНДОВАННЫЕ ГОРОДА ===")
-        for city_info in result["top_cities"]:
-            print(f"\n{city_info['city']} (Score: {city_info['similarity_score']:.3f}):")
-            print(city_info['summary'])
-
-        print("\n=== РЕЛЕВАНТНЫЕ ДОКУМЕНТЫ ===")
-        print(result["relevant_docs"])
-
-        print("\n=== ИТОГОВАЯ РЕКОМЕНДАЦИЯ ===")
-        print(result["final_answer"])
+        for city, score in top_cities:
+            print(f"\n{city} (Score: {score:.3f})")
+            if city in cities_chunks:
+                relevant_info = []
+                for chunk in cities_chunks[city]:
+                    if any(keyword in chunk.lower() for keyword in ['пляж', 'море', 'погода', 'температура', 'климат']):
+                        relevant_info.append(chunk.split('\n\n', 1)[1] if '\n\n' in chunk else chunk)
+                # if relevant_info:
+                    # print("Релевантная информация:")
+                    # print('\n'.join(relevant_info[:2]))  # Show first 2 relevant chunks
     else:
         print("Не удалось обработать запрос")
 
@@ -31,6 +32,7 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nПрограмма завершена пользователем")
+        raise
     except Exception as e:
         print(f"\nПроизошла ошибка: {e}")
-
+        raise

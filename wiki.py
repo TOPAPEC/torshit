@@ -51,7 +51,21 @@ class WikiService:
                 return WikiContent(page.summary, page.text, chunks)
         return None
 
-    async def get_all_cities_content(self) -> Dict[str, WikiContent]:
-        tasks = [self.get_wiki_content(city) for city in Config.RESORT_CITIES]
+    async def get_cities_by_type(self, location_type: str) -> Dict[str, WikiContent]:
+        """Get content for cities of a specific type (e.g., 'море', 'город')."""
+        if location_type not in Config.RESORT_CITIES:
+            print(f"Warning: Unknown location type '{location_type}', falling back to all cities")
+            cities = [city for sublist in Config.RESORT_CITIES.values() for city in sublist]
+        else:
+            cities = Config.RESORT_CITIES[location_type]
+        
+        tasks = [self.get_wiki_content(city) for city in cities]
         results = await asyncio.gather(*tasks)
-        return {city: content for city, content in zip(Config.RESORT_CITIES, results) if content}
+        return {city: content for city, content in zip(cities, results) if content}
+
+    async def get_all_cities_content(self) -> Dict[str, WikiContent]:
+        """Get content for all cities (fallback method)."""
+        all_cities = [city for sublist in Config.RESORT_CITIES.values() for city in sublist]
+        tasks = [self.get_wiki_content(city) for city in all_cities]
+        results = await asyncio.gather(*tasks)
+        return {city: content for city, content in zip(all_cities, results) if content}

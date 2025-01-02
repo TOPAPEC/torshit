@@ -76,7 +76,7 @@ class EmbeddingService:
 
     def get_top_cities(
         self, 
-        preferences: str,
+        preferences_embedding: np.ndarray,
         cities_embeddings: Dict[str, np.ndarray],
         cities_descriptions: Dict[str, str],
         top_n: int = 2
@@ -85,7 +85,7 @@ class EmbeddingService:
         Get top cities based on similarity with user preferences.
 
         Args:
-            preferences: User preferences text
+            preferences_embedding: Embedding vector of user preferences
             cities_embeddings: Dictionary of city embeddings {city_name: embedding}
             cities_descriptions: Dictionary of city descriptions {city_name: description}
             top_n: Number of top cities to return
@@ -96,13 +96,8 @@ class EmbeddingService:
         print(f"Computing similarities for {len(cities_embeddings)} cities")
 
         similarities = {}
-        preferences_embedding = cities_embeddings[preferences]
 
         for city, city_embedding in cities_embeddings.items():
-            # Skip the preferences embedding from comparison
-            if city == preferences:
-                continue
-
             similarity = cosine_similarity(
                 preferences_embedding.reshape(1, -1),
                 city_embedding.reshape(1, -1)
@@ -163,4 +158,4 @@ class EmbeddingService:
                 self._save_to_cache(text, embedding)
                 result[text] = embedding
 
-        return result 
+        return result
