@@ -49,7 +49,7 @@ class TravelAdvisor:
             
             if not cities_content:
                 print("No cities content found")
-                return None, None, None, None
+                return None, None, None, None, None
 
             # print("Cities content retrieved:")
             # for city, content in cities_content.items():

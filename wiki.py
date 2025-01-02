@@ -1,16 +1,18 @@
 import wikipediaapi
 import asyncio
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
 
 from config import Config
+from osm_service import OSMService, CityPOIs
 
 @dataclass
 class WikiContent:
     summary: str
     full_text: str
     chunks: List[str]
+    pois: Optional[CityPOIs] = None
 
 class TextProcessor:
     def __init__(self, max_chunk_size: int = 4000):
@@ -41,15 +43,28 @@ class WikiService:
     def __init__(self):
         self.wiki = wikipediaapi.Wikipedia('torshitapp/1.0', language='ru')
         self.text_processor = TextProcessor()
+        self.osm_service = OSMService()
 
     async def get_wiki_content(self, city: str) -> WikiContent:
         loop = asyncio.get_event_loop()
+        
+        # Fetch Wikipedia content
         with ThreadPoolExecutor() as pool:
             page = await loop.run_in_executor(pool, self.wiki.page, city)
-            if page.exists():
-                chunks = self.text_processor.create_chunks(city, page.text)
-                return WikiContent(page.summary, page.text, chunks)
-        return None
+            if not page.exists():
+                return None
+            
+            chunks = self.text_processor.create_chunks(city, page.text)
+            
+            # Fetch POIs in parallel
+            pois = await self.osm_service.get_city_pois(city)
+            
+            # Add POI information to chunks
+            poi_description = self.osm_service.format_poi_description(pois)
+            if poi_description:
+                chunks.append(f"Title: {city}\n\nТуристическая информация:\n{poi_description}")
+            
+            return WikiContent(page.summary, page.text, chunks, pois)
 
     async def get_cities_by_type(self, location_type: str) -> Dict[str, WikiContent]:
         """Get content for cities of a specific type (e.g., 'море', 'город')."""

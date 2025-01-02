@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Туристический Помощник</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="chat-container">
+            <div class="chat-header">
+                <h1>🏖️ Туристический Помощник</h1>
+                <p>Опишите, какой отдых вы ищете, и я помогу подобрать подходящий город</p>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="message system">
+                    Здравствуйте! Расскажите, какой отдых вы ищете? Например: "Хочу поехать на море в августе, чтобы было тепло около 25-30 градусов и песчаный пляж. Бюджет до 100000 рублей."
+                </div>
+            </div>
+            <div class="chat-input">
+                <textarea id="user-input" placeholder="Введите ваш запрос..." rows="3"></textarea>
+                <button id="send-button">Отправить</button>
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
