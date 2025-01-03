@@ -22,8 +22,7 @@ class EmbeddingService:
         )
         self.model = AutoModel.from_pretrained(
             "sberbank-ai/ruBert-base",
-            return_dict=False,
-            torchscript=True  # Enable TorchScript optimization
+            return_dict=True  # Changed to True to get structured output
         ).to(self.device).eval()  # Set to eval mode
         
         self.batch_size = batch_size
@@ -67,9 +66,8 @@ class EmbeddingService:
             return cached_item.iloc[0]['embedding']
         return None
 
-    @torch.jit.script  # JIT compile for faster execution
     def mean_pooling(self, model_output, attention_mask):
-        token_embeddings = model_output[0]
+        token_embeddings = model_output.last_hidden_state
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
         sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
