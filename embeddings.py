@@ -1,7 +1,8 @@
 import torch
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from transformers import AutoTokenizer, AutoModel
 from sklearn.metrics.pairwise import cosine_similarity
+from seasons import SEASONS
 
 import torch
 from typing import Dict, List, Tuple
@@ -79,7 +80,10 @@ class EmbeddingService:
         preferences_embedding: np.ndarray,
         cities_embeddings: Dict[str, np.ndarray],
         cities_descriptions: Dict[str, str],
-        top_n: int = 2
+        top_n: int = 2,
+        season: Optional[str] = None,
+        activity: Optional[str] = None,
+        activity_matcher = None
     ) -> List[Tuple[str, float]]:
         """
         Get top cities based on similarity with user preferences.
@@ -98,13 +102,51 @@ class EmbeddingService:
         similarities = {}
 
         for city, city_embedding in cities_embeddings.items():
+            # Base similarity score
             similarity = cosine_similarity(
                 preferences_embedding.reshape(1, -1),
                 city_embedding.reshape(1, -1)
             )[0][0]
 
+            city_text = cities_descriptions[city].lower()
+            
+            # Apply seasonal boost if season is specified
+            if season and season in SEASONS:
+                season_data = SEASONS[season]
+                
+                # Calculate seasonal boost
+                seasonal_boost = 0.0
+                
+                # Boost for keyword matches
+                keyword_matches = sum(1 for keyword in season_data['keywords'] 
+                                   if keyword in city_text)
+                seasonal_boost += 0.05 * keyword_matches  # 5% boost per keyword
+                
+                # Boost for temperature match
+                import re
+                temp_matches = re.finditer(r'температура.*?(-?\d+)', city_text)
+                for match in temp_matches:
+                    temp = int(match.group(1))
+                    if season_data['temp_range'][0] <= temp <= season_data['temp_range'][1]:
+                        seasonal_boost += 0.1  # 10% boost for temperature match
+                        break
+                
+                # Apply seasonal boost
+                similarity *= (1 + seasonal_boost)
+            
+            # Apply activity boost if activity is specified
+            if activity and activity_matcher:
+                activity_score = activity_matcher.get_activity_score(city_text, activity)
+                if activity_score > 0:
+                    # Strong boost for good activity matches (up to 50% boost)
+                    activity_boost = 0.5 * activity_score
+                    similarity *= (1 + activity_boost)
+                else:
+                    # Penalty for cities that don't support the activity
+                    similarity *= 0.5  # 50% penalty
+
             similarities[city] = similarity
-            print(f"Similarity for {city}: {similarity:.4f}")
+            # print(f"Similarity for {city}: {similarity:.4f}")
 
         top_cities = sorted(
             similarities.items(), 

@@ -4,6 +4,7 @@ from typing import List, Dict, Tuple, Optional
 import tiktoken
 import json
 import asyncio
+from seasons import SEASONS, get_season_from_text
 
 from config import Config
 
@@ -159,6 +160,56 @@ class LLMService:
         )
         return response.choices[0].message.content
 
+    async def extract_season_llm(self, text: str) -> Optional[str]:
+        """Extract season using LLM when rule-based methods fail"""
+        prompt = """Определите сезон для путешествия на основе текста. 
+        Варианты: winter (зима), spring (весна), summer (лето), fall (осень).
+        Если сезон невозможно определить, верните null.
+        Отвечайте одним словом - названием сезона на английском или null."""
+        
+        try:
+            response = await self.client.chat.completions.create(
+                model=Config.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": text}
+                ],
+                temperature=0.0,
+                max_tokens=10
+            )
+            season = response.choices[0].message.content.strip().lower()
+            return season if season in SEASONS else None
+        except Exception as e:
+            print(f"Error in LLM season extraction: {e}")
+            return None
+
+    async def get_season(self, text: str) -> Optional[str]:
+        """Get season using rule-based methods first, then LLM as fallback"""
+        # Try rule-based extraction first
+        season = get_season_from_text(text)
+        if season:
+            return season
+            
+        # Use LLM as fallback
+        return await self.extract_season_llm(text)
+
+    async def extract_activity_llm(self, text: str, prompt: str) -> str:
+        """Extract activity type using LLM"""
+        try:
+            response = await self.client.chat.completions.create(
+                model=Config.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": text}
+                ],
+                temperature=0.0,
+                max_tokens=10
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error in LLM activity extraction: {e}")
+            return "null"
+
     async def get_rag_response(self, user_preferences: str, documents: List[dict]) -> Tuple[str, str]:
         # Calculate available tokens for responses
         available_tokens = self.context_manager.get_available_tokens(user_preferences, is_rag=True)
@@ -206,5 +257,3 @@ class LLMService:
             max_tokens=self.max_final_response_tokens
         )
         return relevant_docs, final_response.choices[0].message.content
-
-
