@@ -160,8 +160,11 @@ async def process_cities(cities: List[str]) -> Dict[str, Dict[str, List[str]]]:
 
 async def main():
     with tqdm(total=3, desc="Tourist facts extraction") as pbar:
-        # For now, only process Pskov
-        cities = ["Псков"]
+        # Get all cities from config
+        cities = []
+        for category_cities in Config.RESORT_CITIES.values():
+            cities.extend(category_cities)
+        cities = list(set(cities))  # Remove duplicates
         pbar.set_description("Processing cities")
         results = await process_cities(cities)
         pbar.update(1)

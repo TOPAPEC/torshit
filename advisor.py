@@ -6,6 +6,8 @@ from activities import ActivityMatcher
 from temperature import normalize_temperature_text, is_temperature_in_range
 from config import Config
 import re
+import json
+import asyncio
 
 class TravelAdvisor:
     def __init__(self, model_context_length: int = 10000):
@@ -15,6 +17,47 @@ class TravelAdvisor:
         self.llm_service = LLMService(model_context_length)
         self.context_manager = self.llm_service.context_manager
         self.activity_matcher = ActivityMatcher(self.llm_service)
+        
+        # Load tourist facts
+        with open('tourist_facts.json', 'r', encoding='utf-8') as f:
+            self.tourist_facts = json.load(f)
+        
+        # Calculate embeddings for all facts using batching
+        from tqdm import tqdm
+        self.fact_embeddings = {}
+        
+        # Count total facts for progress bar
+        total_facts = sum(
+            len(facts) 
+            for categories in self.tourist_facts.values() 
+            for facts in categories.values()
+        )
+        print(f"Found {total_facts} facts to process")
+        
+        # Collect all facts with progress bar
+        all_facts = []
+        fact_to_city_category = {}
+        with tqdm(total=total_facts, desc="Collecting facts") as pbar:
+            for city, categories in self.tourist_facts.items():
+                for category, facts in categories.items():
+                    for fact in facts:
+                        all_facts.append(fact)
+                        fact_to_city_category[fact] = (city, category)
+                        pbar.update(1)
+        
+        # Get embeddings in batches
+        print("Computing embeddings...")
+        fact_embeddings = self.embedding_service.get_embeddings_batch(all_facts)
+        
+        # Organize embeddings back into structure
+        print("Organizing results...")
+        for fact, embedding in fact_embeddings.items():
+            city, category = fact_to_city_category[fact]
+            if city not in self.fact_embeddings:
+                self.fact_embeddings[city] = {}
+            if category not in self.fact_embeddings[city]:
+                self.fact_embeddings[city][category] = []
+            self.fact_embeddings[city][category].append((fact, embedding))
         
     def _filter_cities_by_season(self, cities_content: dict, season: str, preferences: str = "") -> dict:
         """Filter cities based on seasonal criteria and preferences"""
@@ -244,7 +287,117 @@ class TravelAdvisor:
                 if city in cities_content
             }
 
-            return cities_chunks, top_cities, preferences, available_tokens
+            # Find relevant facts for all cities at once
+            relevant_facts = {}
+            all_city_facts = []
+            
+            # First collect top facts for all cities
+            for city in selected_cities:
+                if city in self.fact_embeddings:
+                    city_facts = []
+                    for category, facts in self.fact_embeddings[city].items():
+                        for fact, fact_embedding in facts:
+                            similarity = self.embedding_service.cosine_similarity(
+                                preferences_embedding.reshape(1, -1),
+                                fact_embedding.reshape(1, -1)
+                            )[0][0]
+                            city_facts.append((fact, similarity))
+                    
+                    # Sort facts by relevance and take top 15
+                    city_facts.sort(key=lambda x: x[1], reverse=True)
+                    top_facts = city_facts[:15]
+                    facts_text = "\n".join([fact for fact, _ in top_facts])
+                    all_city_facts.append({
+                        "city": city,
+                        "facts": facts_text
+                    })
+            
+            if all_city_facts:
+                # Process each city's facts in parallel
+                async def summarize_city_facts(city_data):
+                    messages = [
+                        {"role": "system", "content": f"""На основе предпочтений пользователя и фактов о городе, выберите и перефразируйте 5-7 самых релевантных фактов.
+Предпочтения пользователя: {preferences}
+
+Правила:
+1. Выбирайте факты, напрямую связанные с интересами и требованиями пользователя
+2. Объединяйте похожие факты
+3. Удаляйте избыточную информацию
+4. Формулируйте факты кратко и четко
+5. Сохраняйте только практически полезную информацию для планирования поездки"""},
+                        {"role": "user", "content": city_data["facts"]}
+                    ]
+                    
+                    response = await self.llm_service.client.chat.completions.create(
+                        model=Config.LLM_MODEL,
+                        messages=messages,
+                        temperature=0.0,
+                        max_tokens=512
+                    )
+                    
+                    return city_data["city"], [
+                        (fact.strip(), 1.0) 
+                        for fact in response.choices[0].message.content.split('\n')
+                        if fact.strip()
+                    ]
+                
+                # Create tasks for all cities
+                tasks = [summarize_city_facts(city_data) for city_data in all_city_facts]
+                
+                # Run all tasks in parallel
+                results = await asyncio.gather(*tasks)
+                
+                # Organize results
+                relevant_facts = {city: facts for city, facts in results}
+
+            # Final LLM summarization of recommendations
+            summarized_facts = {}
+            for city, facts in relevant_facts.items():
+                messages = [
+                    {"role": "system", "content": f"""Создайте краткое описание города, включая только релевантную информацию для запроса:
+
+ОСНОВНЫЕ ФАКТЫ:
+• Общая информация об инфраструктуре города
+• Особенности и преимущества для запрошенного типа отдыха
+• Уникальные характеристики города
+
+Если в запросе указан сезон:
+Температура в [сезон]: XX°C
+
+Для пляжного отдыха - только популярные пляжи:
+• [название пляжа]
+• [название пляжа]
+
+Для семейного отдыха - только развлечения для детей:
+• [название места]
+• [название места]
+
+Для культурного туризма - только основные достопримечательности:
+• [название места]
+• [название места]
+
+Для зимнего отдыха - только горнолыжная инфраструктура:
+• [название объекта]
+• [название объекта]
+
+Для оздоровительного отдыха - только спа и санатории:
+• [название объекта]
+• [название объекта]
+
+Запрос пользователя: {preferences}"""},
+                    {"role": "user", "content": "\n".join([fact for fact, _ in facts])}
+                ]
+                
+                response = await self.llm_service.client.chat.completions.create(
+                    model=Config.LLM_MODEL,
+                    messages=messages,
+                    temperature=0.0,
+                    max_tokens=256
+                )
+                
+                summarized_facts[city] = [(fact.strip(), 1.0) for fact in response.choices[0].message.content.split('\n') if fact.strip()]
+
+            return cities_chunks, top_cities, preferences, available_tokens, summarized_facts
 
         except Exception as e:
             print(f"Error occurred in process_request: {str(e)}")

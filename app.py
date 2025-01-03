@@ -1,96 +1,77 @@
 from flask import Flask, render_template, request, jsonify
 import asyncio
 from advisor import TravelAdvisor
+from asgiref.sync import async_to_sync
 
 app = Flask(__name__)
+# Initialize advisor
 advisor = TravelAdvisor()
 
 @app.route('/')
-def home():
+def index():
     return render_template('index.html')
 
 @app.route('/ask', methods=['POST'])
-def ask():
-    user_input = request.json.get('message', '')
-    if not user_input:
-        return jsonify({'error': 'No message provided'}), 400
-    
+async def ask():
     try:
-        # Run the async advisor in a sync context
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        cities_chunks, top_cities, preferences, available_tokens = loop.run_until_complete(
-            advisor.process_request(user_input)
-        )
-        loop.close()
+        query = request.json.get('message')
+        if not query:
+            return jsonify({'error': 'No message provided'}), 400
 
+        # Process the query using TravelAdvisor
+        cities_chunks, top_cities, preferences, available_tokens, relevant_facts = await advisor.process_request(query)
+        
         if not cities_chunks:
-            return jsonify({'error': 'Could not process request'}), 500
+            return jsonify({
+                'preferences': 'Не удалось обработать запрос',
+                'recommendations': []
+            })
 
-        # Format the response
-        response = {
-            'preferences': preferences,
-            'recommendations': []
-        }
+        # Format preferences for display
+        preferences_html = f"<h3>📋 Анализ запроса:</h3><p>{preferences}</p>"
 
+        # Format recommendations
+        recommendations = []
         for city, score in top_cities:
-            city_info = {
-                'name': city,
-                'score': f"{score:.3f}",
-                'details': []
-            }
+            details = []
             
+            # Add score
+            details.append(f"Релевантность: {score:.3f}")
+            
+            # Add relevant facts
+            if city in relevant_facts and relevant_facts[city]:
+                facts_text = "📚 Интересные факты:"
+                for fact, _ in relevant_facts[city]:
+                    facts_text += f"<br>• {fact}"
+                details.append(facts_text)
+            
+            # Add climate information if available
             if city in cities_chunks:
-                # Extract relevant information based on user preferences
                 all_text = " ".join(cities_chunks[city])
-                
-                # Create a focused summary based on the city's features
-                summary = []
-                
-                # Check for beach and sea information
-                if 'пляж' in all_text.lower() or 'море' in all_text.lower():
-                    beach_info = "🏖️ "
-                    if 'песчаный' in all_text.lower():
-                        beach_info += "Есть песчаные пляжи. "
-                    if 'купальный сезон' in all_text.lower():
-                        for sentence in all_text.split('.'):
-                            if 'купальный сезон' in sentence.lower():
-                                beach_info += sentence.strip() + ". "
-                                break
-                    summary.append(beach_info.strip())
-                
-                # Check for climate information
-                if 'август' in all_text.lower() or 'температура' in all_text.lower():
+                if 'температура' in all_text.lower() or any(month in all_text.lower() for month in ['январ', 'феврал', 'март', 'апрел', 'май', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр']):
                     climate_info = "🌡️ "
                     for sentence in all_text.split('.'):
-                        if 'август' in sentence.lower() and ('температура' in sentence.lower() or 'градус' in sentence.lower()):
+                        if any(month in sentence.lower() for month in ['январ', 'феврал', 'март', 'апрел', 'май', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр']) and ('температура' in sentence.lower() or 'градус' in sentence.lower()):
                             climate_info += sentence.strip() + ". "
                             break
-                    if not 'август' in climate_info.lower():
-                        for sentence in all_text.split('.'):
-                            if 'лет' in sentence.lower() and 'температура' in sentence.lower():
-                                climate_info += sentence.strip() + ". "
-                                break
-                    summary.append(climate_info.strip())
-                
-                # Add tourist infrastructure info if available
-                if 'туристи' in all_text.lower():
-                    for sentence in all_text.split('.'):
-                        if 'туристи' in sentence.lower():
-                            summary.append("🏨 " + sentence.strip() + ".")
-                            break
-                
-                if summary:
-                    city_info['details'] = summary
-                else:
-                    city_info['details'] = [f"🎯 {city} подходит под ваши критерии поиска."]
-            
-            response['recommendations'].append(city_info)
+                    if climate_info != "🌡️ ":
+                        details.append(climate_info.strip().replace(",", "."))
 
-        return jsonify(response)
+            recommendations.append({
+                'name': city,
+                'details': details
+            })
+
+        return jsonify({
+            'preferences': preferences_html,
+            'recommendations': recommendations
+        })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'preferences': f'Произошла ошибка: {str(e)}',
+            'recommendations': []
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
